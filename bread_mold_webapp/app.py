@@ -5,10 +5,55 @@ from ultralytics import YOLO
 from PIL import Image, ImageDraw
 import base64
 import tempfile
+import torch
+from torch.hub import load_state_dict_from_url
+
+# Handle PyTorch 2.6+ security changes for loading models
+# Add safe globals for ultralytics models and their dependencies
+try:
+    from ultralytics.nn.tasks import DetectionModel
+    from ultralytics.nn.modules.conv import Conv, autopad
+    from ultralytics.nn.modules.block import C2f, Bottleneck
+    from ultralytics.nn.modules.head import Detect
+    torch.serialization.add_safe_globals([DetectionModel, Conv, C2f, Bottleneck, Detect])
+except ImportError:
+    pass
+
+try:
+    # Also add torch.nn modules that might be needed
+    from torch.nn.modules.container import Sequential
+    from torch.nn.modules.activation import SiLU, Sigmoid
+    from torch.nn.modules.pooling import MaxPool2d
+    from torch.nn.modules.linear import Linear
+    from torch.nn.modules.normalization import BatchNorm2d
+    torch.serialization.add_safe_globals([Sequential, SiLU, Sigmoid, MaxPool2d, Linear, BatchNorm2d])
+except ImportError:
+    pass
 
 # === Load local YOLO model (.pt file) ===
 MODEL_PATH = "bread_mold_webapp/my_model.pt"   # <- change to your model filename
-model = YOLO(MODEL_PATH)
+
+# Create a context where we temporarily allow unsafe loading for the model
+# This is a workaround for PyTorch 2.6+ security changes
+def load_model_with_weights_only_false(model_path):
+    original_torch_load = torch.load
+
+    def patched_torch_load(f, map_location=None, **kwargs):
+        kwargs['weights_only'] = False # Force weights_only to False
+        return original_torch_load(f, map_location=map_location, **kwargs)
+
+    # Temporarily replace torch.load
+    torch.load = patched_torch_load
+    try:
+        model = YOLO(model_path)
+    finally:
+        # Restore original torch.load
+        torch.load = original_torch_load
+
+    return model
+
+model = load_model_with_weights_only_false(MODEL_PATH)
+
 # ==============================================
 
 app = Flask(__name__)
