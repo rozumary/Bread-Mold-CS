@@ -5,9 +5,40 @@ from ultralytics import YOLO
 from PIL import Image, ImageDraw
 import base64
 import tempfile
+import numpy as np
+
+def calculate_total_mold_area(boxes):
+    """
+    Calculate the total area covered by mold boxes, avoiding double counting
+    overlapping regions using inclusion-exclusion principle
+    """
+    if not boxes:
+        return 0
+
+    # For simplicity, we'll use a rasterization approach for accurate area calculation
+    # Create a binary mask for mold areas
+    # Determine the image size from the boxes (or use a reasonable default)
+    max_x = max(box[2] for box in boxes) if boxes else 1
+    max_y = max(box[3] for box in boxes) if boxes else 1
+    
+    # Create a mask with sufficient resolution
+    mask_width = int(max_x) + 100  # Add padding
+    mask_height = int(max_y) + 100
+
+    # Create a binary mask
+    mask = np.zeros((mask_height, mask_width), dtype=np.uint8)
+
+    # Fill the mask with mold regions
+    for x1, y1, x2, y2 in boxes:
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+        mask[y1:y2, x1:x2] = 1
+
+    # Calculate the total area by counting non-zero pixels
+    total_area = np.count_nonzero(mask)
+    return total_area
 
 # === Load local YOLO model (.pt file) ===
-MODEL_PATH = "bread_mold_webapp\my_model.pt"   # <- change to your model filename
+MODEL_PATH = "Bread-Mold-CS-main/bread_mold_webapp/my_model.pt"   # <- change to your model filename
 model = YOLO(MODEL_PATH)
 # ==========================================
 
@@ -30,14 +61,15 @@ def analyze():
     temp.close()
 
     # Run YOLO prediction safely
-    results = model.predict(source=temp.name, conf=0.40)
+    results = model.predict(source=temp.name, conf=0.25, iou=0.45)
 
     # Load image to draw
     image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     draw = ImageDraw.Draw(image)
     w, h = image.size
 
-    mold_area = 0
+    # Collect mold detection boxes for accurate area calculation
+    mold_boxes = []
     bread_area = w * h
 
     detections = results[0].boxes
@@ -52,10 +84,13 @@ def analyze():
 
         color = (255, 0, 0) if "mold" in cls_name.lower() else (0, 120, 255)
         draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
-        draw.text((x1, y1 - 10), f"{cls_name} {conf*100:.1f}%", fill=color)
+        draw.text((x1, y1 - 10), f"{cls_name} {conf*100:.2f}%", fill=color)
 
         if "mold" in cls_name.lower():
-            mold_area += (x2 - x1) * (y2 - y1)
+            mold_boxes.append((x1, y1, x2, y2))
+
+    # Calculate total mold area without double counting overlapping regions
+    mold_area = calculate_total_mold_area(mold_boxes)
 
     # Cleanup temp file
     os.unlink(temp.name)
