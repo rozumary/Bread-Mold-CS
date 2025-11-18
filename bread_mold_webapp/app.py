@@ -7,7 +7,7 @@ import base64
 import tempfile
 
 # === Load local YOLO model (.pt file) ===
-MODEL_PATH = "bread_mold_webapp\my_model.pt"   # <- change to your model filename
+MODEL_PATH = "../Bread-Mold-CS-main/bread_mold_webapp/my_model.pt"   # <- change to your model filename
 model = YOLO(MODEL_PATH)
 # ==========================================
 
